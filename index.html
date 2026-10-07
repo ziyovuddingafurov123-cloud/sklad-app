@@ -1,0 +1,1222 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Склад — учёт обуви</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --page:        #f9f9f7;
+    --surface-1:   #fcfcfb;
+    --text-primary:#0b0b0b;
+    --text-secondary:#52514e;
+    --muted:       #898781;
+    --gridline:    #e1e0d9;
+    --baseline:    #c3c2b7;
+    --border:      rgba(11,11,11,0.10);
+    --series-1:    #2a78d6;
+    --good:        #0ca30c;
+    --critical:    #d03b3b;
+    --critical-bg: #fbe9e9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page:        #0d0d0d;
+      --surface-1:   #1a1a19;
+      --text-primary:#ffffff;
+      --text-secondary:#c3c2b7;
+      --muted:       #898781;
+      --gridline:    #2c2c2a;
+      --baseline:    #383835;
+      --border:      rgba(255,255,255,0.10);
+      --series-1:    #3987e5;
+      --good:        #0ca30c;
+      --critical:    #e66767;
+      --critical-bg: #3a1f1f;
+    }
+  }
+  * { box-sizing: border-box; }
+  :root {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+  }
+  header {
+    padding: 20px 24px 0;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--text-secondary); font-size: 13px; margin: 0 0 16px; }
+  nav {
+    display: flex; gap: 4px; border-bottom: 1px solid var(--gridline);
+    padding: 0 24px;
+  }
+  nav button {
+    appearance: none; border: none; background: none; cursor: pointer;
+    padding: 10px 16px; font-size: 14px; color: var(--text-secondary);
+    border-bottom: 2px solid transparent; font-family: inherit;
+  }
+  nav button.active { color: var(--text-primary); border-bottom-color: var(--series-1); font-weight: 600; }
+  main { padding: 20px 24px 60px; max-width: 1000px; margin: 0 auto; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 12px; color: var(--text-secondary); font-weight: 600; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .tile .label { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .tile .value { font-size: 22px; font-weight: 600; font-variant-numeric: proportional-nums; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--gridline); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.low-stock td { background: var(--critical-bg); }
+  .badge-critical { color: var(--critical); font-weight: 600; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--text-secondary); }
+  input, select {
+    font-family: inherit; font-size: 13px; padding: 7px 9px;
+    border: 1px solid var(--gridline); border-radius: 6px;
+    background: var(--surface-1); color: var(--text-primary);
+  }
+  button.btn {
+    font-family: inherit; font-size: 13px; padding: 8px 14px;
+    border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+    background: var(--series-1); color: #fff; font-weight: 600;
+  }
+  button.btn.secondary { background: var(--surface-1); color: var(--text-primary); }
+  button.btn.danger { background: var(--surface-1); color: var(--critical); border-color: var(--critical); }
+  button.icon-btn {
+    border: none; background: none; cursor: pointer; color: var(--muted); font-size: 13px;
+  }
+  button.icon-btn:hover { color: var(--critical); }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .filters { display: flex; gap: 6px; margin-bottom: 12px; }
+  .filters button {
+    font-family: inherit; font-size: 12px; padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--gridline); background: var(--surface-1); color: var(--text-secondary); cursor: pointer;
+  }
+  .filters button.active { background: var(--series-1); color: #fff; border-color: var(--series-1); }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .bar-label { width: 200px; font-size: 12px; color: var(--text-secondary); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track { flex: 1; background: var(--gridline); border-radius: 4px; height: 20px; position: relative; }
+  .bar-fill { background: var(--series-1); height: 20px; border-radius: 4px 4px 4px 0; min-width: 4px; }
+  .bar-value { width: 90px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-primary); flex-shrink: 0; }
+  .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+  .model-group { border-bottom: 1px solid var(--gridline); }
+  .model-group:last-child { border-bottom: none; }
+  .model-group summary {
+    cursor: pointer; padding: 10px 4px; display: flex; align-items: baseline;
+    justify-content: space-between; gap: 12px; list-style: none;
+  }
+  .model-group summary::-webkit-details-marker { display: none; }
+  .model-group summary::before { content: "▸ "; color: var(--muted); }
+  .model-group[open] summary::before { content: "▾ "; }
+  .model-group .model-name { font-weight: 600; font-size: 13px; }
+  .model-group .model-meta { font-size: 12px; color: var(--text-secondary); text-align: right; }
+  .size-table { margin: 0 0 8px 18px; width: calc(100% - 18px); }
+  .size-table th, .size-table td { padding: 5px 8px; }
+  .footer-note { color: var(--muted); font-size: 12px; margin-top: 24px; }
+  .data-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Склад — учёт обуви</h1>
+  <p class="sub" id="header-sub">Данные синхронизируются с облаком — открывается с любого устройства.</p>
+</header>
+
+<nav>
+  <button data-tab="dashboard" class="active">Аналитика</button>
+  <button data-tab="inventory">Склад</button>
+  <button data-tab="sales">Продажи</button>
+  <button data-tab="turnover">Оборот</button>
+</nav>
+
+<main>
+
+  <!-- DASHBOARD -->
+  <section id="view-dashboard" class="view active">
+    <div class="filters" id="range-filters">
+      <button data-range="7">7 дней</button>
+      <button data-range="30" class="active">30 дней</button>
+      <button data-range="90">90 дней</button>
+      <button data-range="all">Всё время</button>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <h2>Топ моделей по продажам (шт), выбранный период</h2>
+      <div id="chart-qty"></div>
+    </div>
+
+    <div class="card">
+      <h2>Разбивка по моделям</h2>
+      <table>
+        <thead>
+          <tr><th>Модель</th><th class="num">Продано, шт</th><th class="num">Выручка</th><th class="num">Прибыль</th><th class="num">Доля выручки</th></tr>
+        </thead>
+        <tbody id="model-breakdown-body"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Заканчивается на складе (порог: <span id="low-stock-threshold-label"></span> шт)</h2>
+      <div class="row" style="margin-bottom:8px;">
+        <div class="field">
+          <label>Порог "мало на складе"</label>
+          <input type="number" id="low-stock-threshold" min="0" step="1" style="width:80px">
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Модель</th><th>Размер</th><th class="num">Остаток</th></tr></thead>
+        <tbody id="low-stock-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- INVENTORY -->
+  <section id="view-inventory" class="view">
+    <div class="tiles" id="inventory-tiles"></div>
+
+    <div class="card">
+      <h2>Добавить товар</h2>
+      <div class="row">
+        <div class="field" style="min-width:180px">
+          <label>Модель</label>
+          <select id="new-model-select"></select>
+        </div>
+        <div class="field" id="new-model-text-wrap" style="min-width:180px">
+          <label>Название новой модели</label>
+          <input id="new-model-text" placeholder="Nike Air Max 90">
+        </div>
+        <div class="field"><label>Размер</label><input id="new-size" style="width:70px" placeholder="42"></div>
+        <div class="field"><label>Закупочная цена</label><input id="new-cost" type="number" style="width:130px" placeholder="350000"></div>
+        <div class="field"><label>Цена продажи</label><input id="new-price" type="number" style="width:130px" placeholder="550000"></div>
+        <div class="field"><label>Остаток, шт</label><input id="new-stock" type="number" style="width:90px" placeholder="10"></div>
+        <button class="btn" id="add-product-btn">Добавить</button>
+      </div>
+      <p class="empty" id="new-model-hint">Выбери уже существующую модель, чтобы просто добавить ещё один размер — название и цены подставятся сами.</p>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <input id="inventory-search" placeholder="Поиск по модели…" style="flex:1;min-width:200px">
+      </div>
+      <div id="inventory-groups"></div>
+    </div>
+  </section>
+
+  <!-- SALES -->
+  <section id="view-sales" class="view">
+    <div class="card">
+      <h2>Записать продажу</h2>
+      <div class="row">
+        <div class="field" style="min-width:260px">
+          <label>Товар</label>
+          <select id="sale-product"></select>
+        </div>
+        <div class="field"><label>Количество</label><input id="sale-qty" type="number" min="1" value="1" style="width:80px"></div>
+        <div class="field"><label>Цена за шт.</label><input id="sale-price" type="number" style="width:130px"></div>
+        <div class="field"><label>Дата</label><input id="sale-date" type="date"></div>
+        <button class="btn" id="record-sale-btn">Записать продажу</button>
+      </div>
+      <div class="empty" id="sale-hint"></div>
+    </div>
+
+    <div class="card">
+      <h2>История продаж</h2>
+      <table>
+        <thead>
+          <tr><th>Дата</th><th>Модель</th><th>Размер</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th></th></tr>
+        </thead>
+        <tbody id="sales-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- TURNOVER -->
+  <section id="view-turnover" class="view">
+    <div class="tiles" id="turnover-tiles"></div>
+
+    <div class="card">
+      <h2>Что докупить на деньги от продаж</h2>
+      <p class="empty" id="turnover-explain" style="padding-top:0"></p>
+      <table>
+        <thead>
+          <tr><th>Модель</th><th>Размер</th><th class="num">Остаток</th><th class="num">Продано за 30 дн.</th><th class="num">Докупить, шт</th><th class="num">Сумма закупки</th><th></th></tr>
+        </thead>
+        <tbody id="turnover-reco-body"></tbody>
+      </table>
+      <p class="footer-note" id="turnover-reco-total"></p>
+    </div>
+
+    <div class="card">
+      <h2>Записать закупку (товар поступил на склад)</h2>
+      <div class="row">
+        <div class="field" style="min-width:260px">
+          <label>Товар</label>
+          <select id="purchase-product"></select>
+        </div>
+        <div class="field"><label>Количество</label><input id="purchase-qty" type="number" min="1" value="1" style="width:80px"></div>
+        <div class="field"><label>Закупочная цена за шт.</label><input id="purchase-cost" type="number" style="width:140px"></div>
+        <div class="field"><label>Дата</label><input id="purchase-date" type="date"></div>
+        <button class="btn" id="record-purchase-btn">Записать закупку</button>
+      </div>
+      <p class="empty">Остаток товара на складе увеличится автоматически, а сумма закупки спишется из денег от продаж.</p>
+      <table>
+        <thead><tr><th>Дата</th><th>Модель</th><th>Размер</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th></th></tr></thead>
+        <tbody id="purchases-body"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Изъятия и расходы (деньги, которые не идут в закупку)</h2>
+      <div class="row">
+        <div class="field"><label>Сумма</label><input id="withdraw-amount" type="number" style="width:140px" placeholder="500000"></div>
+        <div class="field" style="min-width:220px"><label>Комментарий</label><input id="withdraw-note" placeholder="Аренда, зарплата, себе…"></div>
+        <div class="field"><label>Дата</label><input id="withdraw-date" type="date"></div>
+        <button class="btn secondary" id="record-withdraw-btn">Записать</button>
+      </div>
+      <table>
+        <thead><tr><th>Дата</th><th>Комментарий</th><th class="num">Сумма</th><th></th></tr></thead>
+        <tbody id="withdrawals-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="card">
+    <h2>Синхронизация с облаком (Google Таблица)</h2>
+    <p class="empty" style="padding-top:0">Как только ссылка и код сохранены — склад сам подтягивает данные при открытии и сам отправляет изменения в облако через секунду после каждого действия. Кнопки ниже — на случай, если нужно сделать это руками прямо сейчас.</p>
+    <div class="row">
+      <div class="field" style="flex:1;min-width:280px">
+        <label>Ссылка на Web App (из Google Apps Script)</label>
+        <input id="sync-url" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+      </div>
+      <div class="field" style="min-width:200px">
+        <label>Секретный код (для отправки)</label>
+        <input id="sync-secret" type="text" placeholder="как в SYNC_SECRET в скрипте">
+      </div>
+      <button class="btn secondary" id="sync-save-url-btn">Сохранить</button>
+    </div>
+    <div class="data-actions">
+      <button class="btn" id="sync-push-btn">Отправить сейчас</button>
+      <button class="btn secondary" id="sync-pull-btn">Загрузить сейчас</button>
+    </div>
+    <p class="footer-note" id="sync-status">Ссылка ещё не настроена — см. README.md, раздел "Резервная копия в интернете".</p>
+  </div>
+
+  <div class="card">
+    <h2>Данные</h2>
+    <div class="data-actions">
+      <button class="btn secondary" id="export-btn">Экспорт (резервная копия .json)</button>
+      <button class="btn secondary" id="import-btn">Импорт из .json</button>
+      <input type="file" id="import-file" accept="application/json" style="display:none">
+    </div>
+    <p class="footer-note">Основное хранилище — облако (Google Таблица), см. выше. В этом браузере данные тоже кэшируются (localStorage), чтобы приложение открывалось мгновенно и работало даже при коротких перебоях с интернетом.</p>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var STORAGE_KEY = "sklad_obuv_v1";
+  var SYNC_URL_KEY = "sklad_sync_url";
+  var SYNC_SECRET_KEY = "sklad_sync_secret";
+
+  // ---------- Telegram Mini App ----------
+  if (window.Telegram && window.Telegram.WebApp) {
+    try {
+      Telegram.WebApp.ready();
+      Telegram.WebApp.expand();
+    } catch (e) { /* не внутри Telegram — игнорируем */ }
+  }
+
+  // ---------- state ----------
+  var DB = load() || seedDemoData();
+  ensureShape();
+
+  var currentRange = "30"; // "7" | "30" | "90" | "all"
+
+  // ---------- persistence ----------
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) { return null; }
+  }
+  function save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+    scheduleCloudPush();
+  }
+  function nextId() {
+    DB.nextId = (DB.nextId || 1) + 1;
+    return DB.nextId;
+  }
+
+  function seedDemoData() {
+    var models = [
+      { model: "Nike Air Max 90",        cost: 380000, price: 620000, weight: 5 },
+      { model: "Adidas Superstar",       cost: 340000, price: 550000, weight: 4 },
+      { model: "Puma Suede Classic",     cost: 260000, price: 420000, weight: 2 },
+      { model: "Converse Chuck 70",      cost: 300000, price: 480000, weight: 3 },
+      { model: "Reebok Classic Leather", cost: 280000, price: 450000, weight: 2 },
+      { model: "Vans Old Skool",         cost: 270000, price: 430000, weight: 3 }
+    ];
+    var sizes = [40, 41, 42, 43];
+    var db = { nextId: 0, products: [], sales: [], settings: { lowStockThreshold: 3 } };
+
+    models.forEach(function (m) {
+      sizes.forEach(function (sz) {
+        db.products.push({
+          id: ++db.nextId,
+          model: m.model,
+          size: sz,
+          cost: m.cost,
+          price: m.price,
+          stock: 3 + Math.floor(Math.random() * 10)
+        });
+      });
+    });
+
+    // weighted pool for demo sales
+    var pool = [];
+    models.forEach(function (m) {
+      for (var i = 0; i < m.weight; i++) pool.push(m.model);
+    });
+
+    var today = new Date();
+    for (var i = 0; i < 55; i++) {
+      var modelName = pool[Math.floor(Math.random() * pool.length)];
+      var candidates = db.products.filter(function (p) { return p.model === modelName; });
+      var product = candidates[Math.floor(Math.random() * candidates.length)];
+      var qty = 1 + (Math.random() < 0.25 ? 1 : 0);
+      var daysAgo = Math.floor(Math.random() * 60);
+      var d = new Date(today.getTime() - daysAgo * 86400000);
+      var dateStr = d.toISOString().slice(0, 10);
+
+      db.sales.push({
+        id: ++db.nextId,
+        productId: product.id,
+        model: product.model,
+        size: product.size,
+        qty: qty,
+        price: product.price,
+        cost: product.cost,
+        date: dateStr
+      });
+      product.stock = Math.max(0, product.stock - qty);
+    }
+
+    db.sales.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    return db;
+  }
+
+  // ---------- helpers ----------
+  function fmt(n) {
+    return Math.round(n).toLocaleString("ru-RU") + " сум";
+  }
+  function fmtNum(n) {
+    return Math.round(n).toLocaleString("ru-RU");
+  }
+  function pluralizeSizes(n) {
+    var mod10 = n % 10, mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return "размер";
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return "размера";
+    return "размеров";
+  }
+  function productLabel(p) {
+    return p.model + " — р. " + p.size;
+  }
+  function findProduct(id) {
+    for (var i = 0; i < DB.products.length; i++) if (DB.products[i].id === id) return DB.products[i];
+    return null;
+  }
+  function rangeDays() {
+    if (currentRange === "all") return null;
+    return parseInt(currentRange, 10);
+  }
+  function salesInRange() {
+    var days = rangeDays();
+    if (days === null) return DB.sales.slice();
+    var cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - days);
+    return DB.sales.filter(function (s) { return new Date(s.date) >= cutoff; });
+  }
+
+  // ---------- tabs ----------
+  document.querySelectorAll("nav button").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll("nav button").forEach(function (b) { b.classList.remove("active"); });
+      document.querySelectorAll(".view").forEach(function (v) { v.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById("view-" + btn.dataset.tab).classList.add("active");
+      renderAll();
+    });
+  });
+
+  document.querySelectorAll("#range-filters button").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      currentRange = btn.dataset.range;
+      document.querySelectorAll("#range-filters button").forEach(function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      renderDashboard();
+    });
+  });
+
+  // ---------- render: dashboard ----------
+  function renderDashboard() {
+    var sales = salesInRange();
+    var totalQty = 0, totalRevenue = 0, totalCost = 0;
+    sales.forEach(function (s) {
+      totalQty += s.qty;
+      totalRevenue += s.qty * s.price;
+      totalCost += s.qty * s.cost;
+    });
+    var profit = totalRevenue - totalCost;
+    var avgCheck = sales.length ? totalRevenue / sales.length : 0;
+
+    var tiles = document.getElementById("tiles");
+    tiles.innerHTML = "";
+    [
+      ["Продано, шт", fmtNum(totalQty)],
+      ["Выручка", fmt(totalRevenue)],
+      ["Прибыль", fmt(profit)],
+      ["Средний чек", fmt(avgCheck)]
+    ].forEach(function (pair) {
+      var el = document.createElement("div");
+      el.className = "tile";
+      el.innerHTML = '<div class="label">' + pair[0] + '</div><div class="value">' + pair[1] + "</div>";
+      tiles.appendChild(el);
+    });
+
+    // group by model
+    var byModel = {};
+    sales.forEach(function (s) {
+      if (!byModel[s.model]) byModel[s.model] = { qty: 0, revenue: 0, cost: 0 };
+      byModel[s.model].qty += s.qty;
+      byModel[s.model].revenue += s.qty * s.price;
+      byModel[s.model].cost += s.qty * s.cost;
+    });
+    var rows = Object.keys(byModel).map(function (name) {
+      return { model: name, qty: byModel[name].qty, revenue: byModel[name].revenue, profit: byModel[name].revenue - byModel[name].cost };
+    });
+    rows.sort(function (a, b) { return b.qty - a.qty; });
+
+    // chart
+    var chart = document.getElementById("chart-qty");
+    chart.innerHTML = "";
+    if (!rows.length) {
+      chart.innerHTML = '<div class="empty">Нет продаж за выбранный период.</div>';
+    } else {
+      var maxQty = rows[0].qty;
+      rows.slice(0, 8).forEach(function (r) {
+        var line = document.createElement("div");
+        line.className = "bar-row";
+        var widthPct = Math.max(4, (r.qty / maxQty) * 100);
+        line.title = r.model + ": " + fmtNum(r.qty) + " шт, " + fmt(r.revenue);
+        line.innerHTML =
+          '<div class="bar-label">' + escapeHtml(r.model) + '</div>' +
+          '<div class="bar-track"><div class="bar-fill" style="width:' + widthPct + '%"></div></div>' +
+          '<div class="bar-value">' + fmtNum(r.qty) + " шт</div>";
+        chart.appendChild(line);
+      });
+    }
+
+    // breakdown table
+    var body = document.getElementById("model-breakdown-body");
+    body.innerHTML = "";
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">Нет данных</td></tr>';
+    } else {
+      rows.forEach(function (r) {
+        var share = totalRevenue ? (r.revenue / totalRevenue * 100) : 0;
+        var tr = document.createElement("tr");
+        tr.innerHTML =
+          "<td>" + escapeHtml(r.model) + "</td>" +
+          '<td class="num">' + fmtNum(r.qty) + "</td>" +
+          '<td class="num">' + fmt(r.revenue) + "</td>" +
+          '<td class="num">' + fmt(r.profit) + "</td>" +
+          '<td class="num">' + share.toFixed(1) + "%</td>";
+        body.appendChild(tr);
+      });
+    }
+
+    // low stock
+    var threshold = DB.settings.lowStockThreshold;
+    document.getElementById("low-stock-threshold").value = threshold;
+    document.getElementById("low-stock-threshold-label").textContent = threshold;
+    var lowBody = document.getElementById("low-stock-body");
+    lowBody.innerHTML = "";
+    var low = DB.products.filter(function (p) { return p.stock <= threshold; })
+      .sort(function (a, b) { return a.stock - b.stock; });
+    if (!low.length) {
+      lowBody.innerHTML = '<tr><td colspan="3" class="empty">Всё в достатке</td></tr>';
+    } else {
+      low.forEach(function (p) {
+        var tr = document.createElement("tr");
+        tr.className = "low-stock";
+        tr.innerHTML =
+          "<td>" + escapeHtml(p.model) + "</td>" +
+          "<td>" + p.size + "</td>" +
+          '<td class="num badge-critical">' + p.stock + "</td>";
+        lowBody.appendChild(tr);
+      });
+    }
+  }
+
+  document.getElementById("low-stock-threshold").addEventListener("change", function (e) {
+    var v = parseInt(e.target.value, 10);
+    DB.settings.lowStockThreshold = isNaN(v) ? 0 : v;
+    save();
+    renderDashboard();
+  });
+
+  // ---------- render: inventory ----------
+  function renderInventorySummary() {
+    var totalUnits = 0, totalCostValue = 0, totalPriceValue = 0;
+    DB.products.forEach(function (p) {
+      totalUnits += p.stock;
+      totalCostValue += p.stock * p.cost;
+      totalPriceValue += p.stock * p.price;
+    });
+    var tiles = document.getElementById("inventory-tiles");
+    tiles.innerHTML = "";
+    [
+      ["Товара в обороте, шт", fmtNum(totalUnits)],
+      ["Сумма склада (по закупке)", fmt(totalCostValue)],
+      ["Сумма склада (по цене продажи)", fmt(totalPriceValue)]
+    ].forEach(function (pair) {
+      var el = document.createElement("div");
+      el.className = "tile";
+      el.innerHTML = '<div class="label">' + pair[0] + '</div><div class="value">' + pair[1] + "</div>";
+      tiles.appendChild(el);
+    });
+  }
+
+  var openModelGroups = {};
+
+  function renderInventory() {
+    renderInventorySummary();
+    var container = document.getElementById("inventory-groups");
+    var q = (document.getElementById("inventory-search").value || "").toLowerCase();
+    container.innerHTML = "";
+
+    var list = DB.products.filter(function (p) { return p.model.toLowerCase().indexOf(q) !== -1; });
+    if (!list.length) {
+      container.innerHTML = '<div class="empty">Ничего не найдено</div>';
+      return;
+    }
+
+    // group by model
+    var groups = {};
+    list.forEach(function (p) {
+      if (!groups[p.model]) groups[p.model] = [];
+      groups[p.model].push(p);
+    });
+    var modelNames = Object.keys(groups).sort(function (a, b) { return a.localeCompare(b); });
+
+    modelNames.forEach(function (model) {
+      var sizes = groups[model].sort(function (a, b) { return String(a.size).localeCompare(String(b.size), undefined, { numeric: true }); });
+      var totalStock = 0, totalCostValue = 0, totalPriceValue = 0;
+      sizes.forEach(function (p) { totalStock += p.stock; totalCostValue += p.stock * p.cost; totalPriceValue += p.stock * p.price; });
+
+      var details = document.createElement("details");
+      details.className = "model-group";
+      if (openModelGroups[model]) details.open = true;
+      details.addEventListener("toggle", function () { openModelGroups[model] = details.open; });
+
+      var summary = document.createElement("summary");
+      summary.innerHTML =
+        '<span class="model-name">' + escapeHtml(model) + " (" + sizes.length + " " + pluralizeSizes(sizes.length) + ")</span>" +
+        '<span class="model-meta">Остаток: ' + fmtNum(totalStock) + " шт · Закупка: " + fmt(totalCostValue) + " · Продажа: " + fmt(totalPriceValue) + "</span>";
+      details.appendChild(summary);
+
+      var table = document.createElement("table");
+      table.className = "size-table";
+      table.innerHTML =
+        "<thead><tr><th>Размер</th><th class=\"num\">Остаток</th><th class=\"num\">Закупка</th><th class=\"num\">Продажа</th><th class=\"num\">Сумма остатка</th><th></th></tr></thead>" +
+        "<tbody></tbody>";
+      var tbody = table.querySelector("tbody");
+      sizes.forEach(function (p) {
+        var tr = document.createElement("tr");
+        if (p.stock <= DB.settings.lowStockThreshold) tr.className = "low-stock";
+        tr.innerHTML =
+          "<td>" + escapeHtml(String(p.size)) + "</td>" +
+          '<td class="num"><input type="number" data-id="' + p.id + '" data-field="stock" value="' + p.stock + '" style="width:70px"></td>' +
+          '<td class="num"><input type="number" data-id="' + p.id + '" data-field="cost" value="' + p.cost + '" style="width:110px"></td>' +
+          '<td class="num"><input type="number" data-id="' + p.id + '" data-field="price" value="' + p.price + '" style="width:110px"></td>' +
+          '<td class="num">' + fmt(p.stock * p.cost) + "</td>" +
+          '<td><button class="icon-btn" data-del-product="' + p.id + '">Удалить</button></td>';
+        tbody.appendChild(tr);
+      });
+      details.appendChild(table);
+      container.appendChild(details);
+    });
+
+    container.querySelectorAll("input").forEach(function (inp) {
+      inp.addEventListener("change", function () {
+        var p = findProduct(parseInt(inp.dataset.id, 10));
+        if (!p) return;
+        var v = parseFloat(inp.value);
+        if (isNaN(v) || v < 0) v = 0;
+        p[inp.dataset.field] = v;
+        save();
+        renderAll();
+      });
+    });
+    container.querySelectorAll("[data-del-product]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = parseInt(btn.dataset.delProduct, 10);
+        if (!confirm("Удалить эту позицию со склада?")) return;
+        DB.products = DB.products.filter(function (p) { return p.id !== id; });
+        save();
+        renderAll();
+      });
+    });
+  }
+
+  document.getElementById("inventory-search").addEventListener("input", renderInventory);
+
+  var NEW_MODEL_VALUE = "__new__";
+  var newModelSelect = document.getElementById("new-model-select");
+  var newModelTextWrap = document.getElementById("new-model-text-wrap");
+  var newModelText = document.getElementById("new-model-text");
+  var newModelHint = document.getElementById("new-model-hint");
+
+  function renderNewModelSelect() {
+    var prevValue = newModelSelect.value;
+    var models = Array.from(new Set(DB.products.map(function (p) { return p.model; })))
+      .sort(function (a, b) { return a.localeCompare(b); });
+    newModelSelect.innerHTML = "";
+    var newOpt = document.createElement("option");
+    newOpt.value = NEW_MODEL_VALUE;
+    newOpt.textContent = "➕ Новая модель";
+    newModelSelect.appendChild(newOpt);
+    models.forEach(function (m) {
+      var opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m;
+      newModelSelect.appendChild(opt);
+    });
+    if (models.indexOf(prevValue) !== -1) newModelSelect.value = prevValue;
+    updateNewModelUi();
+  }
+
+  function updateNewModelUi() {
+    var isNew = newModelSelect.value === NEW_MODEL_VALUE;
+    newModelTextWrap.style.display = isNew ? "" : "none";
+    if (isNew) {
+      newModelHint.textContent = "Впиши название новой модели, размер и цены — так добавится первая позиция.";
+    } else {
+      var example = DB.products.filter(function (p) { return p.model === newModelSelect.value; })[0];
+      if (example) {
+        document.getElementById("new-cost").value = example.cost;
+        document.getElementById("new-price").value = example.price;
+      }
+      newModelHint.textContent = "Модель выбрана — просто впиши размер и остаток, цены подставились из уже существующего размера (можно поправить).";
+    }
+  }
+  newModelSelect.addEventListener("change", updateNewModelUi);
+
+  document.getElementById("add-product-btn").addEventListener("click", function () {
+    var isNew = newModelSelect.value === NEW_MODEL_VALUE;
+    var model = isNew ? newModelText.value.trim() : newModelSelect.value;
+    var size = document.getElementById("new-size").value.trim();
+    var cost = parseFloat(document.getElementById("new-cost").value);
+    var price = parseFloat(document.getElementById("new-price").value);
+    var stock = parseInt(document.getElementById("new-stock").value, 10);
+    if (!model || !size) { alert("Укажите модель и размер."); return; }
+    DB.products.push({
+      id: nextId(),
+      model: model,
+      size: size,
+      cost: isNaN(cost) ? 0 : cost,
+      price: isNaN(price) ? 0 : price,
+      stock: isNaN(stock) ? 0 : stock
+    });
+    save();
+    newModelText.value = "";
+    ["new-size", "new-cost", "new-price", "new-stock"].forEach(function (id) {
+      document.getElementById(id).value = "";
+    });
+    renderAll();
+  });
+
+  // ---------- render: sales ----------
+  function renderSaleForm() {
+    var sel = document.getElementById("sale-product");
+    var prevValue = sel.value;
+    sel.innerHTML = "";
+    DB.products.slice()
+      .sort(function (a, b) { return a.model.localeCompare(b.model) || a.size - b.size; })
+      .forEach(function (p) {
+        var opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = productLabel(p) + " (остаток: " + p.stock + ")";
+        sel.appendChild(opt);
+      });
+    if (prevValue) sel.value = prevValue;
+    updateSalePriceHint();
+    if (!document.getElementById("sale-date").value) {
+      document.getElementById("sale-date").value = new Date().toISOString().slice(0, 10);
+    }
+  }
+
+  function updateSalePriceHint() {
+    var id = parseInt(document.getElementById("sale-product").value, 10);
+    var p = findProduct(id);
+    var hint = document.getElementById("sale-hint");
+    if (!p) { hint.textContent = ""; return; }
+    document.getElementById("sale-price").value = p.price;
+    hint.textContent = "На складе: " + p.stock + " шт. Закупочная цена: " + fmt(p.cost) + ".";
+  }
+  document.getElementById("sale-product").addEventListener("change", updateSalePriceHint);
+
+  document.getElementById("record-sale-btn").addEventListener("click", function () {
+    var id = parseInt(document.getElementById("sale-product").value, 10);
+    var p = findProduct(id);
+    if (!p) { alert("Выберите товар."); return; }
+    var qty = parseInt(document.getElementById("sale-qty").value, 10);
+    var price = parseFloat(document.getElementById("sale-price").value);
+    var date = document.getElementById("sale-date").value || new Date().toISOString().slice(0, 10);
+    if (!qty || qty <= 0) { alert("Укажите количество больше нуля."); return; }
+    if (qty > p.stock) {
+      if (!confirm("На складе только " + p.stock + " шт. Всё равно записать продажу (остаток уйдёт в 0)?")) return;
+    }
+    DB.sales.unshift({
+      id: nextId(),
+      productId: p.id,
+      model: p.model,
+      size: p.size,
+      qty: qty,
+      price: isNaN(price) ? p.price : price,
+      cost: p.cost,
+      date: date
+    });
+    p.stock = Math.max(0, p.stock - qty);
+    save();
+    document.getElementById("sale-qty").value = 1;
+    renderAll();
+  });
+
+  function renderSalesHistory() {
+    var body = document.getElementById("sales-body");
+    body.innerHTML = "";
+    var list = DB.sales.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="7" class="empty">Продаж пока нет</td></tr>';
+      return;
+    }
+    list.forEach(function (s) {
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>" + s.date + "</td>" +
+        "<td>" + escapeHtml(s.model) + "</td>" +
+        "<td>" + s.size + "</td>" +
+        '<td class="num">' + s.qty + "</td>" +
+        '<td class="num">' + fmt(s.price) + "</td>" +
+        '<td class="num">' + fmt(s.qty * s.price) + "</td>" +
+        '<td><button class="icon-btn" data-del-sale="' + s.id + '">Отменить</button></td>';
+      body.appendChild(tr);
+    });
+    body.querySelectorAll("[data-del-sale]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = parseInt(btn.dataset.delSale, 10);
+        var sale = DB.sales.filter(function (s) { return s.id === id; })[0];
+        if (!sale) return;
+        if (!confirm("Отменить эту продажу? Товар вернётся на остаток склада.")) return;
+        var p = findProduct(sale.productId);
+        if (p) p.stock += sale.qty;
+        DB.sales = DB.sales.filter(function (s) { return s.id !== id; });
+        save();
+        renderAll();
+      });
+    });
+  }
+
+  // ---------- data actions ----------
+  document.getElementById("export-btn").addEventListener("click", function () {
+    var blob = new Blob([JSON.stringify(DB, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "sklad-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById("import-btn").addEventListener("click", function () {
+    document.getElementById("import-file").click();
+  });
+  document.getElementById("import-file").addEventListener("change", function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var data = JSON.parse(reader.result);
+        if (!data.products || !data.sales) throw new Error("bad format");
+        if (!confirm("Заменить текущие данные содержимым файла?")) return;
+        DB = data;
+        ensureShape();
+        save();
+        renderAll();
+      } catch (err) {
+        alert("Не удалось прочитать файл — проверьте, что это экспорт из этой же системы.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  });
+
+  // ---------- cloud sync (Google Apps Script Web App) ----------
+  // Облако — источник правды: при открытии подтягиваем свежие данные, при
+  // любом изменении (через save()) отправляем их обратно с небольшой
+  // задержкой. Это то, что позволяет открывать склад с телефона через
+  // Telegram Mini App без включённого компьютера.
+  // Значения по умолчанию — чтобы на новом устройстве/в Telegram склад сразу
+  // подключался к облаку, а не открывался с демо-данными. Это не публичная
+  // версия (как сайт для инвесторов) — ссылку на этот деплой нужно давать
+  // только себе/доверенным людям.
+  var DEFAULT_SYNC_URL = "https://script.google.com/macros/s/AKfycbx0J5fQ9muhp883QnRys9aXDa8GXekU22yslI8uUAWsJFWr1ud_a_Q0rsQ_ympkxcDvvA/exec";
+  var DEFAULT_SYNC_SECRET = "iR0PECY5Z7gnrUyLQudDcpjz";
+
+  var syncUrlInput = document.getElementById("sync-url");
+  var syncSecretInput = document.getElementById("sync-secret");
+  var syncStatus = document.getElementById("sync-status");
+  syncUrlInput.value = localStorage.getItem(SYNC_URL_KEY) || DEFAULT_SYNC_URL;
+  syncSecretInput.value = localStorage.getItem(SYNC_SECRET_KEY) || DEFAULT_SYNC_SECRET;
+  localStorage.setItem(SYNC_URL_KEY, syncUrlInput.value);
+  localStorage.setItem(SYNC_SECRET_KEY, syncSecretInput.value);
+
+  function cloudConfigured() {
+    return !!(syncUrlInput.value.trim() && syncSecretInput.value.trim());
+  }
+
+  document.getElementById("sync-save-url-btn").addEventListener("click", function () {
+    localStorage.setItem(SYNC_URL_KEY, syncUrlInput.value.trim());
+    localStorage.setItem(SYNC_SECRET_KEY, syncSecretInput.value.trim());
+    syncStatus.textContent = "Сохранено.";
+  });
+
+  var cloudPushTimer = null;
+  function scheduleCloudPush() {
+    if (!cloudConfigured()) return;
+    if (cloudPushTimer) clearTimeout(cloudPushTimer);
+    syncStatus.textContent = "Изменения есть, отправка через секунду…";
+    cloudPushTimer = setTimeout(cloudPush, 1500);
+  }
+
+  function cloudPush() {
+    var url = syncUrlInput.value.trim();
+    var secret = syncSecretInput.value.trim();
+    if (!url || !secret) return;
+    syncStatus.textContent = "Отправка в облако…";
+    var payload = Object.assign({}, DB, { secret: secret });
+    fetch(url, { method: "POST", body: JSON.stringify(payload) })
+      .then(function (r) { return r.json(); })
+      .then(function (resp) {
+        if (resp.status === "error") {
+          syncStatus.textContent = "Ошибка: " + resp.message;
+          return;
+        }
+        syncStatus.textContent = "В облаке актуально: " + new Date().toLocaleString("ru-RU");
+      })
+      .catch(function (err) {
+        syncStatus.textContent = "Ошибка отправки: " + err.message + ". Данные остались только в этом браузере.";
+      });
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden" && cloudPushTimer) {
+      clearTimeout(cloudPushTimer);
+      cloudPushTimer = null;
+      cloudPush();
+    }
+  });
+
+  function cloudPull(onDone) {
+    var url = syncUrlInput.value.trim();
+    if (!url) { if (onDone) onDone(false); return; }
+    syncStatus.textContent = "Загрузка из облака…";
+    fetch(url)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.products || !data.sales) throw new Error("Пустой или неверный ответ");
+        DB = data;
+        ensureShape();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+        syncStatus.textContent = "Загружено из облака: " + new Date().toLocaleString("ru-RU");
+        if (onDone) onDone(true);
+      })
+      .catch(function (err) {
+        syncStatus.textContent = "Облако недоступно (" + err.message + ") — показаны локальные данные этого браузера.";
+        if (onDone) onDone(false);
+      });
+  }
+
+  document.getElementById("sync-push-btn").addEventListener("click", function () {
+    if (!cloudConfigured()) { alert("Сначала впишите и сохраните ссылку и секретный код."); return; }
+    cloudPush();
+  });
+
+  document.getElementById("sync-pull-btn").addEventListener("click", function () {
+    if (!syncUrlInput.value.trim()) { alert("Сначала вставьте и сохраните ссылку на Web App."); return; }
+    if (!confirm("Заменить текущие данные на экране тем, что сохранено в облаке?")) return;
+    cloudPull(function () { renderAll(); });
+  });
+
+  // ---------- turnover (оборот: деньги от продаж -> новые закупки) ----------
+  function ensureShape() {
+    if (!DB.purchases) DB.purchases = [];
+    if (!DB.withdrawals) DB.withdrawals = [];
+    if (!DB.settings) DB.settings = { lowStockThreshold: 3 };
+  }
+  function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+  function turnoverNumbers() {
+    var revenue = 0, cogs = 0, bought = 0, withdrawn = 0;
+    DB.sales.forEach(function (s) { revenue += s.qty * s.price; cogs += s.qty * s.cost; });
+    DB.purchases.forEach(function (x) { bought += x.qty * x.cost; });
+    DB.withdrawals.forEach(function (x) { withdrawn += x.amount; });
+    return {
+      revenue: revenue, cogs: cogs, profit: revenue - cogs,
+      bought: bought, withdrawn: withdrawn,
+      available: revenue - bought - withdrawn
+    };
+  }
+
+  function recordPurchase(p, qty, cost, date) {
+    DB.purchases.unshift({
+      id: nextId(), productId: p.id, model: p.model, size: p.size,
+      qty: qty, cost: cost, date: date
+    });
+    p.stock += qty;
+    p.cost = cost;
+    save();
+    renderAll();
+  }
+
+  function renderTurnover() {
+    var n = turnoverNumbers();
+    var tiles = document.getElementById("turnover-tiles");
+    tiles.innerHTML = "";
+    [
+      ["Выручка (всё время)", fmt(n.revenue)],
+      ["Себестоимость проданного (вернуть в оборот)", fmt(n.cogs)],
+      ["Прибыль", fmt(n.profit)],
+      ["Уже потрачено на закупки", fmt(n.bought)],
+      ["Изъято / расходы", fmt(n.withdrawn)],
+      ["Доступно для закупки", fmt(n.available)]
+    ].forEach(function (pair) {
+      var el = document.createElement("div");
+      el.className = "tile";
+      el.innerHTML = '<div class="label">' + pair[0] + '</div><div class="value">' + pair[1] + "</div>";
+      tiles.appendChild(el);
+    });
+
+    document.getElementById("turnover-explain").textContent =
+      "Доступно для закупки = выручка − уже закупленное − изъятия. Рекомендации: сначала то, что лучше продаётся и заканчивается, пока хватает денег.";
+
+    // recommendations
+    var cutoff = new Date(); cutoff.setHours(0, 0, 0, 0); cutoff.setDate(cutoff.getDate() - 30);
+    var sold30 = {};
+    DB.sales.forEach(function (s) {
+      if (new Date(s.date) >= cutoff) sold30[s.productId] = (sold30[s.productId] || 0) + s.qty;
+    });
+    var threshold = DB.settings.lowStockThreshold || 0;
+    var cands = DB.products.map(function (p) {
+      var sold = sold30[p.id] || 0;
+      var target = Math.max(sold, threshold + 1);
+      var need = (sold > 0 || p.stock <= threshold) ? Math.max(0, target - p.stock) : 0;
+      return { p: p, sold: sold, need: need };
+    }).filter(function (c) { return c.need > 0 && c.p.cost > 0; });
+    cands.sort(function (a, b) { return b.sold - a.sold || a.p.stock - b.p.stock; });
+
+    var remaining = Math.max(0, n.available);
+    var spent = 0;
+    var body = document.getElementById("turnover-reco-body");
+    body.innerHTML = "";
+    var shown = 0;
+    cands.forEach(function (c) {
+      var qty = Math.min(c.need, Math.floor(remaining / c.p.cost));
+      if (qty <= 0) return;
+      var sum = qty * c.p.cost;
+      remaining -= sum; spent += sum; shown++;
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>" + escapeHtml(c.p.model) + "</td>" +
+        "<td>" + escapeHtml(String(c.p.size)) + "</td>" +
+        '<td class="num">' + c.p.stock + "</td>" +
+        '<td class="num">' + c.sold + "</td>" +
+        '<td class="num"><b>' + qty + "</b></td>" +
+        '<td class="num">' + fmt(sum) + "</td>" +
+        '<td><button class="btn secondary" data-rec-id="' + c.p.id + '" data-rec-qty="' + qty + '">Закупил</button></td>';
+      body.appendChild(tr);
+    });
+    if (!shown) {
+      body.innerHTML = '<tr><td colspan="7" class="empty">' +
+        (n.available <= 0 ? "Свободных денег для закупки пока нет." : "Докупать пока нечего — остатки в порядке.") + "</td></tr>";
+    }
+    document.getElementById("turnover-reco-total").textContent = shown
+      ? "Итого по рекомендациям: " + fmt(spent) + ". Останется свободных денег: " + fmt(remaining) + "."
+      : "";
+    body.querySelectorAll("[data-rec-id]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var p = findProduct(parseInt(btn.dataset.recId, 10));
+        var qty = parseInt(btn.dataset.recQty, 10);
+        if (!p || !qty) return;
+        if (!confirm("Записать закупку: " + productLabel(p) + ", " + qty + " шт по " + fmt(p.cost) + "?")) return;
+        recordPurchase(p, qty, p.cost, todayStr());
+      });
+    });
+
+    // purchase form
+    var sel = document.getElementById("purchase-product");
+    var prev = sel.value;
+    sel.innerHTML = "";
+    DB.products.slice()
+      .sort(function (a, b) { return a.model.localeCompare(b.model) || String(a.size).localeCompare(String(b.size), undefined, { numeric: true }); })
+      .forEach(function (p) {
+        var opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = productLabel(p) + " (остаток: " + p.stock + ")";
+        sel.appendChild(opt);
+      });
+    if (prev) sel.value = prev;
+    if (!document.getElementById("purchase-cost").value) updatePurchaseCost();
+    if (!document.getElementById("purchase-date").value) document.getElementById("purchase-date").value = todayStr();
+    if (!document.getElementById("withdraw-date").value) document.getElementById("withdraw-date").value = todayStr();
+
+    // purchases history
+    var pb = document.getElementById("purchases-body");
+    pb.innerHTML = "";
+    if (!DB.purchases.length) {
+      pb.innerHTML = '<tr><td colspan="7" class="empty">Закупок пока нет</td></tr>';
+    } else {
+      DB.purchases.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; }).forEach(function (x) {
+        var tr = document.createElement("tr");
+        tr.innerHTML =
+          "<td>" + x.date + "</td><td>" + escapeHtml(x.model) + "</td><td>" + escapeHtml(String(x.size)) + "</td>" +
+          '<td class="num">' + x.qty + '</td><td class="num">' + fmt(x.cost) + '</td><td class="num">' + fmt(x.qty * x.cost) + "</td>" +
+          '<td><button class="icon-btn" data-del-purchase="' + x.id + '">Отменить</button></td>';
+        pb.appendChild(tr);
+      });
+      pb.querySelectorAll("[data-del-purchase]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var id = parseInt(btn.dataset.delPurchase, 10);
+          var x = DB.purchases.filter(function (q) { return q.id === id; })[0];
+          if (!x) return;
+          if (!confirm("Отменить закупку? Остаток товара уменьшится, деньги вернутся в «доступно для закупки».")) return;
+          var p = findProduct(x.productId);
+          if (p) p.stock = Math.max(0, p.stock - x.qty);
+          DB.purchases = DB.purchases.filter(function (q) { return q.id !== id; });
+          save();
+          renderAll();
+        });
+      });
+    }
+
+    // withdrawals history
+    var wb = document.getElementById("withdrawals-body");
+    wb.innerHTML = "";
+    if (!DB.withdrawals.length) {
+      wb.innerHTML = '<tr><td colspan="4" class="empty">Изъятий пока нет</td></tr>';
+    } else {
+      DB.withdrawals.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; }).forEach(function (x) {
+        var tr = document.createElement("tr");
+        tr.innerHTML =
+          "<td>" + x.date + "</td><td>" + escapeHtml(x.note || "") + '</td><td class="num">' + fmt(x.amount) + "</td>" +
+          '<td><button class="icon-btn" data-del-withdraw="' + x.id + '">Удалить</button></td>';
+        wb.appendChild(tr);
+      });
+      wb.querySelectorAll("[data-del-withdraw]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var id = parseInt(btn.dataset.delWithdraw, 10);
+          if (!confirm("Удалить эту запись?")) return;
+          DB.withdrawals = DB.withdrawals.filter(function (q) { return q.id !== id; });
+          save();
+          renderAll();
+        });
+      });
+    }
+  }
+
+  function updatePurchaseCost() {
+    var p = findProduct(parseInt(document.getElementById("purchase-product").value, 10));
+    if (p) document.getElementById("purchase-cost").value = p.cost;
+  }
+  document.getElementById("purchase-product").addEventListener("change", updatePurchaseCost);
+
+  document.getElementById("record-purchase-btn").addEventListener("click", function () {
+    var p = findProduct(parseInt(document.getElementById("purchase-product").value, 10));
+    if (!p) { alert("Выберите товар."); return; }
+    var qty = parseInt(document.getElementById("purchase-qty").value, 10);
+    var cost = parseFloat(document.getElementById("purchase-cost").value);
+    var date = document.getElementById("purchase-date").value || todayStr();
+    if (!qty || qty <= 0) { alert("Укажите количество больше нуля."); return; }
+    if (isNaN(cost) || cost <= 0) { alert("Укажите закупочную цену."); return; }
+    var n = turnoverNumbers();
+    if (qty * cost > n.available) {
+      if (!confirm("Эта закупка (" + fmt(qty * cost) + ") больше, чем доступно от продаж (" + fmt(Math.max(0, n.available)) + "). Всё равно записать?")) return;
+    }
+    recordPurchase(p, qty, cost, date);
+    document.getElementById("purchase-qty").value = 1;
+  });
+
+  document.getElementById("record-withdraw-btn").addEventListener("click", function () {
+    var amount = parseFloat(document.getElementById("withdraw-amount").value);
+    if (isNaN(amount) || amount <= 0) { alert("Укажите сумму."); return; }
+    DB.withdrawals.unshift({
+      id: nextId(), amount: amount,
+      note: document.getElementById("withdraw-note").value.trim(),
+      date: document.getElementById("withdraw-date").value || todayStr()
+    });
+    save();
+    document.getElementById("withdraw-amount").value = "";
+    document.getElementById("withdraw-note").value = "";
+    renderAll();
+  });
+
+  // ---------- utils ----------
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function renderAll() {
+    renderDashboard();
+    renderInventory();
+    renderNewModelSelect();
+    renderSaleForm();
+    renderSalesHistory();
+    renderTurnover();
+  }
+
+  if (cloudConfigured()) {
+    cloudPull(function () { renderAll(); });
+  } else {
+    renderAll();
+  }
+})();
+</script>
+</body>
+</html>
