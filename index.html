@@ -133,17 +133,32 @@
 </head>
 <body>
 
+<div id="access-denied-screen" style="display:none;padding:60px 24px;text-align:center;max-width:420px;margin:0 auto;">
+  <h1 style="font-size:18px;">Нет доступа</h1>
+  <p class="sub">У вас нет доступа к этому складу. Обратитесь к владельцу, чтобы он добавил ваш Telegram ID в разделе «Доступ».</p>
+  <p class="footer-note" id="access-denied-id"></p>
+</div>
+
+<div id="app-root">
+
 <header>
   <h1>Склад — учёт обуви</h1>
   <p class="sub" id="header-sub">Данные синхронизируются с облаком — открывается с любого устройства.</p>
 </header>
 
-<nav>
+<nav id="main-nav">
   <button data-tab="dashboard" class="active">Аналитика</button>
   <button data-tab="inventory">Склад</button>
   <button data-tab="sales">Продажи</button>
   <button data-tab="turnover">Оборот</button>
 </nav>
+
+<div id="warehouse-bar" style="padding:12px 24px 0;max-width:1000px;margin:0 auto;display:none">
+  <div class="field" style="max-width:280px">
+    <label>Склад</label>
+    <select id="warehouse-select"></select>
+  </div>
+</div>
 
 <main>
 
@@ -184,6 +199,20 @@
       <table>
         <thead><tr><th>Модель</th><th>Размер</th><th class="num">Остаток</th></tr></thead>
         <tbody id="low-stock-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- VIEWER (только просмотр) -->
+  <section id="view-viewer" class="view">
+    <div class="card">
+      <h2>Товары на складе</h2>
+      <div class="toolbar">
+        <input id="viewer-search" placeholder="Поиск по модели…" style="flex:1;min-width:200px">
+      </div>
+      <table>
+        <thead><tr><th>Модель</th><th>Размер</th><th class="num">Остаток</th></tr></thead>
+        <tbody id="viewer-inventory-body"></tbody>
       </table>
     </div>
   </section>
@@ -298,6 +327,7 @@
     </div>
   </section>
 
+  <div id="admin-only-cards">
   <div class="card">
     <h2>Синхронизация с облаком (Google Таблица)</h2>
     <p class="empty" style="padding-top:0">Как только ссылка и код сохранены — склад сам подтягивает данные при открытии и сам отправляет изменения в облако через секунду после каждого действия. Кнопки ниже — на случай, если нужно сделать это руками прямо сейчас.</p>
@@ -328,7 +358,44 @@
     </div>
     <p class="footer-note">Основное хранилище — облако (Google Таблица), см. выше. В этом браузере данные тоже кэшируются (localStorage), чтобы приложение открывалось мгновенно и работало даже при коротких перебоях с интернетом.</p>
   </div>
+
+  <div class="card" id="warehouses-card">
+    <h2>Склады</h2>
+    <div class="row">
+      <div class="field" style="min-width:220px"><label>Новый склад</label><input id="new-warehouse-name" placeholder="Филиал на Чиланзаре"></div>
+      <button class="btn secondary" id="add-warehouse-btn">Добавить склад</button>
+    </div>
+    <table>
+      <thead><tr><th>Название</th><th class="num">Товаров</th><th></th></tr></thead>
+      <tbody id="warehouses-body"></tbody>
+    </table>
+  </div>
+
+  <div class="card" id="access-card">
+    <h2>Доступ (кто видит склад в Telegram)</h2>
+    <p class="empty" style="padding-top:0" id="my-telegram-id-hint"></p>
+    <div class="row">
+      <div class="field"><label>Telegram ID</label><input id="new-access-id" type="text" placeholder="123456789"></div>
+      <div class="field">
+        <label>Роль</label>
+        <select id="new-access-role">
+          <option value="viewer">Только просмотр</option>
+          <option value="admin">Полный доступ</option>
+        </select>
+      </div>
+      <div class="field" style="min-width:160px"><label>Имя (для памяти)</label><input id="new-access-name" placeholder="Продавец Аня"></div>
+      <button class="btn secondary" id="add-access-btn">Добавить</button>
+    </div>
+    <table>
+      <thead><tr><th>Имя</th><th>Telegram ID</th><th>Роль</th><th></th></tr></thead>
+      <tbody id="access-body"></tbody>
+    </table>
+    <p class="footer-note">Узнать свой Telegram ID можно у бота @userinfobot в Telegram. Доступ проверяется только при открытии через Telegram Mini App — на компьютере (локальный файл в браузере) склад всегда открыт полностью.</p>
+  </div>
+  </div><!-- /admin-only-cards -->
 </main>
+
+</div><!-- /app-root -->
 
 <script>
 (function () {
@@ -339,14 +406,18 @@
   var SYNC_SECRET_KEY = "sklad_sync_secret";
 
   // ---------- Telegram Mini App ----------
+  var telegramUser = null;
   if (window.Telegram && window.Telegram.WebApp) {
     try {
       Telegram.WebApp.ready();
       Telegram.WebApp.expand();
+      telegramUser = (Telegram.WebApp.initDataUnsafe && Telegram.WebApp.initDataUnsafe.user) || null;
     } catch (e) { /* не внутри Telegram — игнорируем */ }
   }
+  var telegramUserId = telegramUser ? String(telegramUser.id) : null;
 
   // ---------- state ----------
+  var currentWarehouseId = null; // выставится в ensureShape() на первый склад
   var DB = load() || seedDemoData();
   ensureShape();
 
@@ -461,12 +532,14 @@
   }
 
   // ---------- tabs ----------
+  var WAREHOUSE_BAR_TABS = { inventory: true, sales: true, turnover: true };
   document.querySelectorAll("nav button").forEach(function (btn) {
     btn.addEventListener("click", function () {
       document.querySelectorAll("nav button").forEach(function (b) { b.classList.remove("active"); });
       document.querySelectorAll(".view").forEach(function (v) { v.classList.remove("active"); });
       btn.classList.add("active");
       document.getElementById("view-" + btn.dataset.tab).classList.add("active");
+      document.getElementById("warehouse-bar").style.display = WAREHOUSE_BAR_TABS[btn.dataset.tab] ? "" : "none";
       renderAll();
     });
   });
@@ -589,9 +662,13 @@
   });
 
   // ---------- render: inventory ----------
+  function productsInCurrentWarehouse() {
+    return DB.products.filter(function (p) { return p.warehouseId === currentWarehouseId; });
+  }
+
   function renderInventorySummary() {
     var totalUnits = 0, totalCostValue = 0, totalPriceValue = 0;
-    DB.products.forEach(function (p) {
+    productsInCurrentWarehouse().forEach(function (p) {
       totalUnits += p.stock;
       totalCostValue += p.stock * p.cost;
       totalPriceValue += p.stock * p.price;
@@ -618,9 +695,9 @@
     var q = (document.getElementById("inventory-search").value || "").toLowerCase();
     container.innerHTML = "";
 
-    var list = DB.products.filter(function (p) { return p.model.toLowerCase().indexOf(q) !== -1; });
+    var list = productsInCurrentWarehouse().filter(function (p) { return p.model.toLowerCase().indexOf(q) !== -1; });
     if (!list.length) {
-      container.innerHTML = '<div class="empty">Ничего не найдено</div>';
+      container.innerHTML = '<div class="empty">Ничего не найдено на этом складе</div>';
       return;
     }
 
@@ -702,7 +779,7 @@
 
   function renderNewModelSelect() {
     var prevValue = newModelSelect.value;
-    var models = Array.from(new Set(DB.products.map(function (p) { return p.model; })))
+    var models = Array.from(new Set(productsInCurrentWarehouse().map(function (p) { return p.model; })))
       .sort(function (a, b) { return a.localeCompare(b); });
     newModelSelect.innerHTML = "";
     var newOpt = document.createElement("option");
@@ -725,7 +802,7 @@
     if (isNew) {
       newModelHint.textContent = "Впиши название новой модели, размер и цены — так добавится первая позиция.";
     } else {
-      var example = DB.products.filter(function (p) { return p.model === newModelSelect.value; })[0];
+      var example = productsInCurrentWarehouse().filter(function (p) { return p.model === newModelSelect.value; })[0];
       if (example) {
         document.getElementById("new-cost").value = example.cost;
         document.getElementById("new-price").value = example.price;
@@ -749,7 +826,8 @@
       size: size,
       cost: isNaN(cost) ? 0 : cost,
       price: isNaN(price) ? 0 : price,
-      stock: isNaN(stock) ? 0 : stock
+      stock: isNaN(stock) ? 0 : stock,
+      warehouseId: currentWarehouseId
     });
     save();
     newModelText.value = "";
@@ -764,7 +842,7 @@
     var sel = document.getElementById("sale-product");
     var prevValue = sel.value;
     sel.innerHTML = "";
-    DB.products.slice()
+    productsInCurrentWarehouse().slice()
       .sort(function (a, b) { return a.model.localeCompare(b.model) || a.size - b.size; })
       .forEach(function (p) {
         var opt = document.createElement("option");
@@ -808,7 +886,8 @@
       qty: qty,
       price: isNaN(price) ? p.price : price,
       cost: p.cost,
-      date: date
+      date: date,
+      warehouseId: p.warehouseId
     });
     p.stock = Math.max(0, p.stock - qty);
     save();
@@ -988,6 +1067,17 @@
     if (!DB.purchases) DB.purchases = [];
     if (!DB.withdrawals) DB.withdrawals = [];
     if (!DB.settings) DB.settings = { lowStockThreshold: 3 };
+    if (!DB.warehouses || !DB.warehouses.length) {
+      DB.warehouses = [{ id: nextId(), name: "Склад 1" }];
+    }
+    if (!DB.access) DB.access = [];
+    var defaultWarehouseId = DB.warehouses[0].id;
+    DB.products.forEach(function (p) { if (!p.warehouseId) p.warehouseId = defaultWarehouseId; });
+    DB.sales.forEach(function (s) { if (!s.warehouseId) s.warehouseId = defaultWarehouseId; });
+    DB.purchases.forEach(function (x) { if (!x.warehouseId) x.warehouseId = defaultWarehouseId; });
+    if (!DB.warehouses.some(function (w) { return w.id === currentWarehouseId; })) {
+      currentWarehouseId = DB.warehouses[0].id;
+    }
   }
   function todayStr() { return new Date().toISOString().slice(0, 10); }
 
@@ -1006,7 +1096,7 @@
   function recordPurchase(p, qty, cost, date) {
     DB.purchases.unshift({
       id: nextId(), productId: p.id, model: p.model, size: p.size,
-      qty: qty, cost: cost, date: date
+      qty: qty, cost: cost, date: date, warehouseId: p.warehouseId
     });
     p.stock += qty;
     p.cost = cost;
@@ -1033,16 +1123,16 @@
     });
 
     document.getElementById("turnover-explain").textContent =
-      "Доступно для закупки = выручка − уже закупленное − изъятия. Рекомендации: сначала то, что лучше продаётся и заканчивается, пока хватает денег.";
+      "Деньги — общие по всему бизнесу; рекомендации и закупки — по выбранному складу (см. переключатель вверху). Доступно для закупки = выручка − уже закупленное − изъятия.";
 
-    // recommendations
+    // recommendations (по текущему складу)
     var cutoff = new Date(); cutoff.setHours(0, 0, 0, 0); cutoff.setDate(cutoff.getDate() - 30);
     var sold30 = {};
     DB.sales.forEach(function (s) {
       if (new Date(s.date) >= cutoff) sold30[s.productId] = (sold30[s.productId] || 0) + s.qty;
     });
     var threshold = DB.settings.lowStockThreshold || 0;
-    var cands = DB.products.map(function (p) {
+    var cands = productsInCurrentWarehouse().map(function (p) {
       var sold = sold30[p.id] || 0;
       var target = Math.max(sold, threshold + 1);
       var need = (sold > 0 || p.stock <= threshold) ? Math.max(0, target - p.stock) : 0;
@@ -1092,7 +1182,7 @@
     var sel = document.getElementById("purchase-product");
     var prev = sel.value;
     sel.innerHTML = "";
-    DB.products.slice()
+    productsInCurrentWarehouse().slice()
       .sort(function (a, b) { return a.model.localeCompare(b.model) || String(a.size).localeCompare(String(b.size), undefined, { numeric: true }); })
       .forEach(function (p) {
         var opt = document.createElement("option");
@@ -1105,13 +1195,14 @@
     if (!document.getElementById("purchase-date").value) document.getElementById("purchase-date").value = todayStr();
     if (!document.getElementById("withdraw-date").value) document.getElementById("withdraw-date").value = todayStr();
 
-    // purchases history
+    // purchases history (по текущему складу)
     var pb = document.getElementById("purchases-body");
     pb.innerHTML = "";
-    if (!DB.purchases.length) {
-      pb.innerHTML = '<tr><td colspan="7" class="empty">Закупок пока нет</td></tr>';
+    var purchasesHere = DB.purchases.filter(function (x) { return x.warehouseId === currentWarehouseId; });
+    if (!purchasesHere.length) {
+      pb.innerHTML = '<tr><td colspan="7" class="empty">Закупок на этом складе пока нет</td></tr>';
     } else {
-      DB.purchases.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; }).forEach(function (x) {
+      purchasesHere.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; }).forEach(function (x) {
         var tr = document.createElement("tr");
         tr.innerHTML =
           "<td>" + x.date + "</td><td>" + escapeHtml(x.model) + "</td><td>" + escapeHtml(String(x.size)) + "</td>" +
@@ -1202,13 +1293,218 @@
     });
   }
 
+  // ---------- доступ (роли по Telegram ID) ----------
+  function myRole() {
+    if (!telegramUserId) return "admin"; // открыто локально на компьютере — доверяем
+    var entry = DB.access.filter(function (a) { return String(a.telegramId) === telegramUserId; })[0];
+    return entry ? entry.role : "none";
+  }
+
+  function bootstrapAccessIfEmpty() {
+    if (telegramUserId && DB.access.length === 0) {
+      DB.access.push({
+        telegramId: telegramUserId,
+        role: "admin",
+        name: (telegramUser && (telegramUser.first_name || telegramUser.username)) || "Владелец"
+      });
+      save();
+    }
+  }
+
+  function applyAccessControl() {
+    bootstrapAccessIfEmpty();
+    var role = myRole();
+    var denied = document.getElementById("access-denied-screen");
+    var root = document.getElementById("app-root");
+
+    if (role === "none") {
+      denied.style.display = "";
+      root.style.display = "none";
+      document.getElementById("access-denied-id").textContent =
+        telegramUserId ? "Ваш Telegram ID: " + telegramUserId : "";
+      return role;
+    }
+
+    denied.style.display = "none";
+    root.style.display = "";
+
+    var nav = document.getElementById("main-nav");
+    var adminCards = document.getElementById("admin-only-cards");
+    var viewerSection = document.getElementById("view-viewer");
+    var otherSectionIds = ["view-dashboard", "view-inventory", "view-sales", "view-turnover"];
+
+    if (role === "viewer") {
+      nav.style.display = "none";
+      adminCards.style.display = "none";
+      otherSectionIds.forEach(function (id) { document.getElementById(id).style.display = "none"; });
+      viewerSection.style.display = "";
+      viewerSection.classList.add("active");
+      document.getElementById("warehouse-bar").style.display = "";
+    } else {
+      nav.style.display = "";
+      adminCards.style.display = "";
+      viewerSection.style.display = "none";
+      viewerSection.classList.remove("active");
+      otherSectionIds.forEach(function (id) { document.getElementById(id).style.display = ""; });
+    }
+    return role;
+  }
+
+  // ---------- склады ----------
+  var warehouseSelect = document.getElementById("warehouse-select");
+  function renderWarehouseSelect() {
+    var prev = currentWarehouseId;
+    warehouseSelect.innerHTML = "";
+    DB.warehouses.forEach(function (w) {
+      var opt = document.createElement("option");
+      opt.value = w.id;
+      opt.textContent = w.name;
+      warehouseSelect.appendChild(opt);
+    });
+    if (DB.warehouses.some(function (w) { return w.id === prev; })) {
+      currentWarehouseId = prev;
+    } else {
+      currentWarehouseId = DB.warehouses[0].id;
+    }
+    warehouseSelect.value = currentWarehouseId;
+  }
+  warehouseSelect.addEventListener("change", function () {
+    currentWarehouseId = parseInt(warehouseSelect.value, 10) || warehouseSelect.value;
+    renderAll();
+  });
+
+  document.getElementById("add-warehouse-btn").addEventListener("click", function () {
+    var name = document.getElementById("new-warehouse-name").value.trim();
+    if (!name) { alert("Укажите название склада."); return; }
+    var id = nextId();
+    DB.warehouses.push({ id: id, name: name });
+    currentWarehouseId = id;
+    document.getElementById("new-warehouse-name").value = "";
+    save();
+    renderAll();
+  });
+
+  function renderWarehousesCard() {
+    var body = document.getElementById("warehouses-body");
+    body.innerHTML = "";
+    DB.warehouses.forEach(function (w) {
+      var count = DB.products.filter(function (p) { return p.warehouseId === w.id; }).length;
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        '<td><input type="text" data-rename-warehouse="' + w.id + '" value="' + escapeHtml(w.name) + '" style="min-width:160px"></td>' +
+        '<td class="num">' + count + '</td>' +
+        '<td>' + (count === 0 && DB.warehouses.length > 1 ? '<button class="icon-btn" data-del-warehouse="' + w.id + '">Удалить</button>' : '') + '</td>';
+      body.appendChild(tr);
+    });
+    body.querySelectorAll("[data-rename-warehouse]").forEach(function (inp) {
+      inp.addEventListener("change", function () {
+        var w = DB.warehouses.filter(function (x) { return x.id === parseInt(inp.dataset.renameWarehouse, 10); })[0];
+        if (!w) return;
+        var val = inp.value.trim();
+        if (!val) { inp.value = w.name; return; }
+        w.name = val;
+        save();
+        renderAll();
+      });
+    });
+    body.querySelectorAll("[data-del-warehouse]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = parseInt(btn.dataset.delWarehouse, 10);
+        if (!confirm("Удалить этот склад? (товаров на нём нет)")) return;
+        DB.warehouses = DB.warehouses.filter(function (w) { return w.id !== id; });
+        save();
+        renderAll();
+      });
+    });
+  }
+
+  // ---------- доступ: управление списком (только для админа) ----------
+  function renderAccessCard() {
+    var hint = document.getElementById("my-telegram-id-hint");
+    hint.textContent = telegramUserId
+      ? "Твой Telegram ID: " + telegramUserId + " (уже в списке ниже, если открыто через Telegram)."
+      : "Сейчас склад открыт локально на компьютере — Telegram ID неизвестен.";
+
+    var body = document.getElementById("access-body");
+    body.innerHTML = "";
+    if (!DB.access.length) {
+      body.innerHTML = '<tr><td colspan="4" class="empty">Список пуст — пока все, кто откроет ссылку в Telegram, не получат доступа.</td></tr>';
+      return;
+    }
+    DB.access.forEach(function (a) {
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>" + escapeHtml(a.name || "") + "</td>" +
+        "<td>" + escapeHtml(String(a.telegramId)) + "</td>" +
+        "<td>" + (a.role === "admin" ? "Полный доступ" : "Только просмотр") + "</td>" +
+        '<td><button class="icon-btn" data-del-access="' + a.telegramId + '">Удалить</button></td>';
+      body.appendChild(tr);
+    });
+    body.querySelectorAll("[data-del-access]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.dataset.delAccess;
+        if (id === telegramUserId) { alert("Нельзя удалить самого себя из списка через приложение — попроси другого админа, если нужно."); return; }
+        if (!confirm("Убрать доступ для этого Telegram ID?")) return;
+        DB.access = DB.access.filter(function (a) { return String(a.telegramId) !== id; });
+        save();
+        renderAll();
+      });
+    });
+  }
+
+  document.getElementById("add-access-btn").addEventListener("click", function () {
+    var id = document.getElementById("new-access-id").value.trim();
+    var role = document.getElementById("new-access-role").value;
+    var name = document.getElementById("new-access-name").value.trim();
+    if (!id || !/^\d+$/.test(id)) { alert("Укажи числовой Telegram ID (узнать можно у @userinfobot)."); return; }
+    DB.access = DB.access.filter(function (a) { return String(a.telegramId) !== id; });
+    DB.access.push({ telegramId: id, role: role, name: name });
+    document.getElementById("new-access-id").value = "";
+    document.getElementById("new-access-name").value = "";
+    save();
+    renderAll();
+  });
+
+  // ---------- вид «только просмотр» ----------
+  function renderViewerInventory() {
+    var body = document.getElementById("viewer-inventory-body");
+    var q = (document.getElementById("viewer-search").value || "").toLowerCase();
+    body.innerHTML = "";
+    var list = productsInCurrentWarehouse()
+      .filter(function (p) { return p.model.toLowerCase().indexOf(q) !== -1; })
+      .sort(function (a, b) { return a.model.localeCompare(b.model) || String(a.size).localeCompare(String(b.size), undefined, { numeric: true }); });
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="3" class="empty">Ничего не найдено</td></tr>';
+      return;
+    }
+    list.forEach(function (p) {
+      var tr = document.createElement("tr");
+      if (p.stock <= DB.settings.lowStockThreshold) tr.className = "low-stock";
+      tr.innerHTML =
+        "<td>" + escapeHtml(p.model) + "</td>" +
+        "<td>" + escapeHtml(String(p.size)) + "</td>" +
+        '<td class="num">' + p.stock + "</td>";
+      body.appendChild(tr);
+    });
+  }
+  document.getElementById("viewer-search").addEventListener("input", renderViewerInventory);
+
   function renderAll() {
+    var role = applyAccessControl();
+    if (role === "none") return;
+    renderWarehouseSelect();
+    if (role === "viewer") {
+      renderViewerInventory();
+      return;
+    }
     renderDashboard();
     renderInventory();
     renderNewModelSelect();
     renderSaleForm();
     renderSalesHistory();
     renderTurnover();
+    renderWarehousesCard();
+    renderAccessCard();
   }
 
   if (cloudConfigured()) {
